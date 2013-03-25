@@ -95,10 +95,25 @@ For any model we should have some validations on required params. For instance, 
 
 Add validation to ensure that any user has a name, hashed_password, email, and salt.
 
-
+If you want to add a regex to the email validation, you may, but realize that any regex you write is bound to have holes in it, and that you can use the html 'email' input tag to do some of this validation for you. If you're really into regexes, though, go for it! Also note that there are great tools for helping you test your regex, such as [rubular](http://rubular.com/).
 
 ##Testing##
-Open the gemfile and delete all the commented text; this will help with our application readability.
-Next head to [rubygems](http://rubygems.org) and look up rspec-rails.
+We have a model, that means we should write tests!
+
+The reason why tests are so important is because they are the only way to tell if you've broken something deep inside your app by adding a new feature, deleting some old code, or refactoring/redesigning your application. In general, tests should cover the interfaces (inputs and outputs), validations, and major functionality of your code. This way you don't have to find out the hard way if something breaks (for instance, by visiting the `/posts/` page and seeing nothing!).
+
+We're going to be using the testing gem `rspec-rails`.
+
+Open the gemfile and delete all the commented text; this will help with our application readability before heading over to [rubygems](http://rubygems.org) and looking up rspec-rails.
 
 Rspec-rails is a gem that will allow us to write tests for each of our controllers, models, and views. Add rspec to the gemfile as shown on the rubygems page for the gem and bundle install. Follow the directions on the rspec-rails documentation page to install the gem.
+
+Enter the `spec/models` directory and open the `user_spec.rb` file if it exists. If it doesn't exist, create it. You should see
+```
+require 'spec_helper'
+
+describe User do
+  pending "add some examples to (or delete) #{__FILE__}"
+end
+```
+
