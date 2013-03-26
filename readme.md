@@ -83,11 +83,11 @@ Now, reading our migration, we can see that if we migrate up the chain, this mig
 
 Of course, now that we've created a migration, we should create the table in the database by running `rake db:migrate`. This will create the table! Awesome!
 
-Note: In the future, if you know what data types and names your colums will have, you can specify them in the migration, e.g.
+Note: In the future, if you know what data types and names your colums will have, you can specify them in the model and it will create a migration for you, e.g.
 ```
-rails g migration CreateUsers name:string email:string salt:string hashed_password:string
+rails g model CreateUsers name:string email:string salt:string hashed_password:string
 ```
-and the migration will pretty much be created for you! I just wanted us to build it from scratch this time--it's really not that bad, but can be somewhat intimidating.
+I just wanted us to build ours from scratch this time--it's really not that bad, but can be somewhat intimidating if you've never done it before.
 
 ###Creating the Model###
 It's great that we have records that we can save in the database, but Rails won't really know what to do with them until we build the model for a User, and the types of things that a User object has (attributes) and can do (methods).
@@ -118,7 +118,7 @@ def email?
   email.presence?
 end
 ```
-You might imagine there woudl be cases where we would want to be able to get an attribute, but not necessarily want to set it after the record has been created. For example, our salt should never change for a given user, so it would not make sense to make that available for someone to exploit (say, by changing a targeted user's salt to "").
+You might imagine there would be cases where we would want to be able to get an attribute, but not necessarily want to set it after the record has been created. For example, our salt should never change for a given user, so it would not make sense to make that available for someone to exploit (say, by changing a targeted user's salt to "").
 
 What whitelisting means is that the attribute can be assigned via 'mass assignment.' Mass assignment just means that we can set multiple attributes at once, e.g.
 ```
@@ -170,14 +170,44 @@ But wait! What happened to hashed_password? That was the name of the column, rig
 
 Let me explain...
 
-For security - keep the hashing algorithm and salt creation inside the user
-For code sanity - objects should know the bare minimum about other objects
-For code sanity - We should not clutter other parts of code (e.g. password change method, signup method) with code that could be in just the User model
+In the form it will make the most sense to give a new user a password and password confirmation field. Since we don't want the view to house the code that creates the hashed password, the form will just pass those values in to the controller as `params[:user][:password]` and `params[:user][:password_confirmation]`, respectively.
 
-Fortunately, there is a way to use password and password_confirmation without actually persisting them to the database.
+The controller is another option for putting in the code to transform password into hashed_password and then pass that directly to the model. However, we wouldn't want a specific controller (whether it is the users_controller, posts_controller, or some other random controller that requires user authentication) to own all the logic associated, so it makes sense to just let the user model handle all authentication related tasks.
 
+By using `attr_accessor` to create `:password`, we are taking advantage of the fact that Rails will create an instance variable, `@password`, a setter method (`password=`), and a getter method (`password`). However, we want to create a hashed_password and save that, and **definitely** don't want to save the actual password anywhere.
 
+Fortunately, there is an easy solution. We will simply override the setter method for `password` with our own method that creates a salt and salted password digest.
 
+I would like you to take a stab at creating the `password=` method in user. A starting point might be:
+```
+def password=(pass)
+  @password = pass
+end
+```
+
+From here, you will need to have a line that creates the salt (and assigns it to `self.salt`) and a line that creates the hashed_password (and assigns it to `self.hashed_password`).
+
+If you're not sure how to create a method that will produce a salt from numbers and letters (lowercase and uppercase), I encourage you to experiment in irb with the following:
+```
+('a'..'z')
+('A'..'Z')
+(0..9)
+```
+and look up how to combine arrays...you will most likely want to use a random number generator to select the index of the master array, and thus give you a random character for your salt. Let's decide that our salt will be 10 alphanumeric characters long.
+
+If you're not sure about the hashing method, go ahead and at the top of your user.rb file enter
+```
+require 'digest'
+```
+and experiment with
+```
+Digest::SHA2.hexdigest("some_string")
+```
+Remember that you will want to hash the password and the salt together.
+
+For the curious, the other two arguments against spreading this code around are:
+1. A programming concept called 'the law of demeter', which basically states that each model should only 'know' about the structure / interfaces of its direct neighbors
+2. To avoid cluttering and spreading of code to different objects and classes, so that future changes are easy to make in one place, versus being distributed throughout the application
 
 ###Model Validation###
 For any model we should have some validations on required params. For instance, it wouldn't make much sense to have a user who had no email, or no name, would it?
@@ -212,10 +242,10 @@ end
 Let's add a few specs to drive the fleshing out of our User model. I'm going to do this one, but as you add models, controllers, and views, you should be writing specs to cover how they function to prevent against breaking them with future features.
 
 We can imagine that we'd want to be able to
-1) look up a user by their email
-2) given a user's digested password, add in the salt and use that to validate a user's login
-3) create a salt for a user when they are first created
-4) validate a new user object before saving it
+1. look up a user by their email
+2. given a user's digested password, add in the salt and use that to validate a user's login
+3. create a salt for a user when they are first created
+4. validate a new user object before saving it
 
 This is what a spec for these characteristics might look like:
 ```
@@ -282,3 +312,6 @@ describe User do
   end
 end
 ```
+Don't worry, you can just copy this code into your model for now. We'll revisit writing tests soon.
+
+###I have a model, now what?###
