@@ -43,39 +43,94 @@ I'm going to suggest (and lay out this tutorial) assuming that we have decided t
 ##User##
 There are several theories on the best way to write application code, and we're going to explore one of them here. The idea is you start with a noun and work your way out from there. For instance, I know that I will have users in my application. These users will have certain attribute (names, passwords, emails, etc.) that I will want to keep track of. I don't necessarily know all the things that users are going to have access to, but I know that I can start with the idea that a User should have to either register or log in when they get to my application.
 
-Rather than scaffold out all the of the pieces of a user, we are going to generate the model, controller, views, etc. as we go.
-```
-rails g model User name:string email:string hashed_password:string salt:string
-```
-This will use the rails generator to create a new model named User that has a string field named 'name', a string field named 'email', a string field named 'hashed_password', and a string field named 'salt'. By default rails will also add a 'created_at' and 'modified_at' timestamp.
+Rather than scaffold out all the of the pieces of a user, we are going to generate each piece of the appication (migration, model, controller, views, etc.) as we go.
 
-If we open the User model (located at `app/models/user.rb`) we will see the following:
+###Creating the Database Table###
+
+```
+rails g migration CreateUsers
+```
+This will create a timestamped (empty) migration file in `db/migrate/` with a name similar to `20130328035331_create_users.rb`. Open it up, and you will see something like this:
+```
+class CreateUsers < ActiveRecord::Migration
+  def up
+  end
+
+  def down
+  end
+end
+```
+The 'up' is what will happen if we run the migration, the 'down' is what will happen if we roll back the migration. We want to create a users table, so we will use a block to do so:
+```
+def up
+  create_table :users do |t|
+    t.string :name
+    t.string :email
+    t.string :hashed_password
+    t.string :salt
+
+    t.timestamps
+  end
+end
+```
+This specifies that `name`, `email`, `hashed_password`, and `salt` will all be strings. If we create the table when we migrate, we should drop to the table when we roll back, so the 'down' method will look like this:
+```
+def down
+  drop_table :users
+end
+```
+Now, reading our migration, we can see that if we migrate up the chain, this migration will create a table called 'users' that has 4 columns we specified: name (string), email (string), hashed_password (string), and salt (string). `t.timestamps` is a special Rails method that adds a `created_at` and `modified_at` timestamp to each record in the database.
+
+Of course, now that we've created a migration, we should create the table in the database by running `rake db:migrate`. This will create the table! Awesome!
+
+Note: In the future, if you know what data types and names your colums will have, you can specify them in the migration, e.g.
+```
+rails g migration CreateUsers name:string email:string salt:string hashed_password:string
+```
+and the migration will pretty much be created for you! I just wanted us to build it from scratch this time--it's really not that bad, but can be somewhat intimidating.
+
+###Creating the Model###
+It's great that we have records that we can save in the database, but Rails won't really know what to do with them until we build the model for a User, and the types of things that a User object has (attributes) and can do (methods).
+
+Head over to `app/models/` and create a file called `user.rb`. Our user will be a class that inherits from ActiveRecord::Base, one of the core Rails modules. Your empty file should look like this:
 ```
 class User < ActiveRecord::Base
-  attr_accessible :email, :hashed_password, :name, :salt
+
 end
 ```
-Here is where a little bit of Rails knowledge can begin to become a little dangerous. `attr_accessible` is a Rails helper method that adds three methods to a class:
+If we had generated this file, it would already have one additional line in it:
 ```
-attr_accessible :attribute
+attr_accessible :email, :hashed_password, :name, :salt
+```
+This creates three methods for each attribute, as well as 'whitelists' them for the application.
 
-# is the same as
-
-def attribute=(attr)
-  @attribute = attr
+The three methods (using :email as the example):
+```
+def email=(arg)
+  @email = email
 end
 
-def attribute
-  @attribute | nil
+def email
+  @email || nil
 end
 
-def attribute?
-  @attribute.present?
+def email?
+  email.presence?
 end
 ```
-Of course, `attr_accessible` doesn't just do that...it also makes any attributes that are `attr_accessible` 'mass-assigned' attributes, that is, designs the given object to accept a hash of all mass-assignable attributes and create a user object from those. This is also referred to as whitelisting, and should be done with caution.
+You might imagine there woudl be cases where we would want to be able to get an attribute, but not necessarily want to set it after the record has been created. For example, our salt should never change for a given user, so it would not make sense to make that available for someone to exploit (say, by changing a targeted user's salt to "").
 
-In contrast, `attr_accessor` only creates the `def attribute` method, also referred to as the 'getter' method (because it 'gets' the value of the attribute).
+What whitelisting means is that the attribute can be assigned via 'mass assignment.' Mass assignment just means that we can set multiple attributes at once, e.g.
+```
+User.new(:name => 'bob', :email => 'bob@bob.com', ...)
+```
+And the object will be saved. There's nothing super wrong with whitelisting, except that it can make your app more vulnerable if you have things like
+```
+Object.create(params[:object])
+```
+in your controller's `create` method. This saves you trouble by having to specify each field from the form, but opens you up for a specific type of attack.
+
+###A quick whitelist attack example###
 
 For example, imagine our application has 'admins,' and the form that a user completes to register passes a hash table of all the form fields into User.new, similar to
 ```
@@ -89,7 +144,21 @@ curl -x http://www.yourapplication.com/users/new?name=hacker&email=hacker@hacker
 
 There are many ways to guard against this, up to and including having a manual process for creating administrators, but to keep things simple all we would do in this case is mark 'admin' as `:attr_protected.` This essentially prevents any kind of external form-based (or POST) access to this attribute.
 
+Another way to protect against it is to call out specific parameters:
+```
+#in the controller code...
+def create
+  u = User.new
+  u.email = params[:user][:email]
+  u.name = params[:user][:name]
+  u.password = params[:user][:password]
+  u.password_confirmation = params[:user][:password_confirmation]
+  u.save
+end
+```
+
 We don't have an admin column, but we do have a salt. Remember that the point of the salt is to make it so that if a hacker gains access to our database he cannot just send the `hashed_password` value through a login field, because the salt is added to the password digest before it is written to the database. If, however, an attacker could change the salt to anything (for example, ""), then it would defeat the purpose of having a salt in the first place. Therefore, we probably want to protect our salt column in the following way:
+
 ```
 class User < ActiveRecord::Base
   attr_accessible :email, :name
@@ -97,11 +166,20 @@ class User < ActiveRecord::Base
   attr_accessor :password, :password_confirmation
 end
 ```
-We have our model ready to go (for now), but no actual database! Go ahead and run
-`rake db:migrate`
-to run the migration generated when we created the User model. Rails will spew out some information about the command, and voila! We will have an (empty) users table in sqlite3.
+But wait! What happened to hashed_password? That was the name of the column, right? What's this 'password' and 'password_confirmation' business?
 
-##Validation##
+Let me explain...
+
+For security - keep the hashing algorithm and salt creation inside the user
+For code sanity - objects should know the bare minimum about other objects
+For code sanity - We should not clutter other parts of code (e.g. password change method, signup method) with code that could be in just the User model
+
+Fortunately, there is a way to use password and password_confirmation without actually persisting them to the database.
+
+
+
+
+###Model Validation###
 For any model we should have some validations on required params. For instance, it wouldn't make much sense to have a user who had no email, or no name, would it?
 
 Add validation to ensure that any user has a name, password, password_confirmation, hashed_password, email, and salt.
