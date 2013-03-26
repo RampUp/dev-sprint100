@@ -55,8 +55,12 @@ class User < ActiveRecord::Base
   attr_accessible :email, :hashed_password, :name, :salt
 end
 ```
-Here is where a little bit of Rails knowledge can begin to become a little dangerous. `attr_accessible` is a Rails helper method that adds two methods to a class:
+Here is where a little bit of Rails knowledge can begin to become a little dangerous. `attr_accessible` is a Rails helper method that adds three methods to a class:
 ```
+attr_accessible :attribute
+
+# is the same as
+
 def attribute=(attr)
   @attribute = attr
 end
@@ -64,8 +68,14 @@ end
 def attribute
   @attribute | nil
 end
+
+def attribute?
+  @attribute.present?
+end
 ```
-Of course, `attr_accessible` doesn't just do that...it also makes any attributes that are `attr_accessible` 'mass-assigned' attributes, that is, designs the given object to accept a hash of all mass-assignable attributes and create a user object from those.
+Of course, `attr_accessible` doesn't just do that...it also makes any attributes that are `attr_accessible` 'mass-assigned' attributes, that is, designs the given object to accept a hash of all mass-assignable attributes and create a user object from those. This is also referred to as whitelisting, and should be done with caution.
+
+In contrast, `attr_accessor` only creates the `def attribute` method, also referred to as the 'getter' method (because it 'gets' the value of the attribute).
 
 For example, imagine our application has 'admins,' and the form that a user completes to register passes a hash table of all the form fields into User.new, similar to
 ```
@@ -73,7 +83,7 @@ User.new(params[:user])
 ```
 Then a malicious user could make a POST request to the same URL the form uses and add on a parameter for 'admin' even if no such field existed on the html form. The request might look like
 ```
-www.yourapplication.com/users/new?name=hacker&email=hacker@hacker.com&admin=1
+curl -x http://www.yourapplication.com/users/new?name=hacker&email=hacker@hacker.com&admin=1
 ```
 `params[:user]` is pulled from the POST request as `{:name => 'hacker', :email => 'hacker@hacker.com', :admin => 1}` and a new admin user is created.
 
@@ -82,8 +92,9 @@ There are many ways to guard against this, up to and including having a manual p
 We don't have an admin column, but we do have a salt. Remember that the point of the salt is to make it so that if a hacker gains access to our database he cannot just send the `hashed_password` value through a login field, because the salt is added to the password digest before it is written to the database. If, however, an attacker could change the salt to anything (for example, ""), then it would defeat the purpose of having a salt in the first place. Therefore, we probably want to protect our salt column in the following way:
 ```
 class User < ActiveRecord::Base
-  attr_accessible :email, :hashed_password, :name
-  attr_protected :salt
+  attr_accessible :email, :name
+
+  attr_accessor :password, :password_confirmation
 end
 ```
 We have our model ready to go (for now), but no actual database! Go ahead and run
@@ -93,7 +104,9 @@ to run the migration generated when we created the User model. Rails will spew o
 ##Validation##
 For any model we should have some validations on required params. For instance, it wouldn't make much sense to have a user who had no email, or no name, would it?
 
-Add validation to ensure that any user has a name, hashed_password, email, and salt.
+Add validation to ensure that any user has a name, password, password_confirmation, hashed_password, email, and salt.
+
+Also add validation to make sure password and password_confirmation match (Hint: there is a rails validation helper for this).
 
 If you want to add a regex to the email validation, you may, but realize that any regex you write is bound to have holes in it, and that you can use the html 'email' input tag to do some of this validation for you. If you're really into regexes, though, go for it! Also note that there are great tools for helping you test your regex, such as [rubular](http://rubular.com/).
 
@@ -117,3 +130,77 @@ describe User do
 end
 ```
 
+###Test-Driven Development###
+Let's add a few specs to drive the fleshing out of our User model. I'm going to do this one, but as you add models, controllers, and views, you should be writing specs to cover how they function to prevent against breaking them with future features.
+
+We can imagine that we'd want to be able to
+1) look up a user by their email
+2) given a user's digested password, add in the salt and use that to validate a user's login
+3) create a salt for a user when they are first created
+4) validate a new user object before saving it
+
+This is what a spec for these characteristics might look like:
+```
+require 'rspec_helper'
+
+describe User do
+  before :each do
+    @user = User.new
+  end
+  context "validation" do
+    before :each do
+      @user = User.new
+    end
+    it "should verify the presence of name, email, password, password_confirmation, hashed_password, and salt" do
+      @user.name = "bob"
+      @user.password = "password"
+      @user.password_confirmation = "password"
+      @user.email = "homer@thesimpsons.com"
+      @user.salt = "salt1234"
+      @user.should be_valid
+    end
+    it "should make sure passwords match" do
+      @user.name = "bob"
+      @user.password = "password"
+      @user.password_confirmation = "wordpass"
+      @user.email = "homer@thesimpsons.com"
+      @user.salt = "salt1234"
+      @user.should_not be_valid
+    end
+    it "should not allow mass assignment of salt" do
+      lambda {User.new(:name => "homer simpson", :password => "password", :password_confirmation => "password", :email => "homer@simpsons.com", :salt => "salt1234")}.should raise_error
+    end
+    ['name', 'email', 'password', 'password_confirmation'].each do |attr|
+      it "should not be valid when missing #{attr}" do
+        (['name', 'email', 'password', 'password_confirmation'] - [attr]).each do |attribute|
+          @user.send(attribute+'=', 'foo')
+        end
+        @user.should_not be_valid
+      end
+    end
+  end
+
+  context "methods" do
+    before :each do
+      @user = User.new
+      @user.name = 'bob'
+      @user.email = 'bob@bob.com'
+      @user.password = 'password'
+      @user.password_confirmation = 'password'
+      @user.save
+    end
+    it "should allow us to find a user by email" do
+      User.find_by_email(@user.email).should == @user
+    end
+    it "should have an authenticate method" do
+      User.methods.include?("authenticate")
+    end
+    it "should authenticate a valid password" do
+      User.authenticate("#{@user.email}", "password").should == @user
+    end
+    it "should not authenticate an invalid password" do
+      User.authenticate("#{@user.email}", "bad_password").should_not == @user
+    end
+  end
+end
+```
