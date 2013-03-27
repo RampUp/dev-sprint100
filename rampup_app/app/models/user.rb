@@ -6,6 +6,8 @@ class User < ActiveRecord::Base
   validates_presence_of :email, :name, :password, :password_confirmation, :hashed_password, :salt
   validates_confirmation_of :password
 
+  validates_uniqueness_of :email
+
   attr_accessor :password, :password_confirmation
 
   def password=(password)

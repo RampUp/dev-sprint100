@@ -44,7 +44,7 @@ I'm going to suggest (and lay out this tutorial) assuming that we have decided t
 - how to generate the salt and add that to the password digest before saving that in the password field when a User is created
 - how to look up the salt and apply that to the digest to validate them when a User logs in
 
-##User##
+##3. User##
 There are several theories on the best way to write application code, and we're going to explore one of them here. The idea is you start with a noun and work your way out from there. For instance, I know that I will have users in my application. These users will have certain attribute (names, passwords, emails, etc.) that I will want to keep track of. I don't necessarily know all the things that users are going to have access to, but I know that I can start with the idea that a User should have to either register or log in when they get to my application.
 
 Rather than scaffold out all the of the pieces of a user, we are going to generate each piece of the appication (migration, model, controller, views, etc.) as we go.
@@ -224,7 +224,7 @@ Don't forget to validate that the email is unique, so that you cannot have multi
 
 If you want to add a regex to the email validation, you may, but realize that any regex you write is bound to have holes in it, and that you can use the html 'email' input tag to do some of this validation for you. If you're really into regexes, though, go for it! Also note that there are great tools for helping you test your regex, such as [rubular](http://rubular.com/).
 
-##Testing##
+##4. Testing##
 We have a model, that means we should write tests!
 
 The reason why tests are so important is because they are the only way to tell if you've broken something deep inside your app by adding a new feature, deleting some old code, or refactoring/redesigning your application. In general, tests should cover the interfaces (inputs and outputs), validations, and major functionality of your code. This way you don't have to find out the hard way if something breaks (for instance, by visiting the `/posts/` page and seeing nothing!).
@@ -322,7 +322,7 @@ For now, focus on getting the tests to pass. You can run the tests (assuming you
 
 If you spend more than an hour trying to get the tests to pass, you can just copy the `user.rb` file from the `examples` folder in the repository.
 
-###So we have a model, now what?###
+##5. Views##
 
 Let's craft a simple login page. First delete the `index.html` file from your `public/` directory.
 
@@ -479,7 +479,7 @@ A layout in Rails is a template within which all other templates are rendered. I
 <% end %>
 ```
 
-###Sessions###
+##6. Sessions##
 We have a way for users to sign up, but not a way for them to sign in! Enter sessions. A session helps us identify the current user. Much as any other site you log in to is able to remember who you are even as you navigate links within the site, or leave and then come back, we want our application to create a session when a user authenticates (logs in).
 
 The best way to manage a session, is with a session controller.
