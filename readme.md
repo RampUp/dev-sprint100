@@ -1,3 +1,7 @@
+#-1. Thanks#
+Thanks to the awesome information in [this railscast](http://railscasts.com/episodes/250-authentication-from-scratch).
+Thanks also to the great info in this (obsolete) [blog post](http://www.aidanf.net/rails_user_authentication_tutorial)
+
 #0. Prerequisites#
 This sprint assumes that you have completed the getting started tutori
 
@@ -189,9 +193,9 @@ From here, you will need to have a line that creates the salt (and assigns it to
 
 If you're not sure how to create a method that will produce a salt from numbers and letters (lowercase and uppercase), I encourage you to experiment in irb with the following:
 ```
-('a'..'z')
-('A'..'Z')
-(0..9)
+('a'..'z').to_a
+('A'..'Z').to_a
+(0..9).to_a
 ```
 and look up how to combine arrays...you will most likely want to use a random number generator to select the index of the master array, and thus give you a random character for your salt. Let's decide that our salt will be 10 alphanumeric characters long.
 
@@ -215,6 +219,8 @@ For any model we should have some validations on required params. For instance, 
 Add validation to ensure that any user has a name, password, password_confirmation, hashed_password, email, and salt.
 
 Also add validation to make sure password and password_confirmation match (Hint: there is a rails validation helper for this).
+
+Don't forget to validate that the email is unique, so that you cannot have multiple users with the same email!
 
 If you want to add a regex to the email validation, you may, but realize that any regex you write is bound to have holes in it, and that you can use the html 'email' input tag to do some of this validation for you. If you're really into regexes, though, go for it! Also note that there are great tools for helping you test your regex, such as [rubular](http://rubular.com/).
 
@@ -312,6 +318,276 @@ describe User do
   end
 end
 ```
-Don't worry, you can just copy this code into your model for now. We'll revisit writing tests soon.
+For now, focus on getting the tests to pass. You can run the tests (assuming you've installed rspec) by typing `rake`. 
 
-###I have a model, now what?###
+If you spend more than an hour trying to get the tests to pass, you can just copy the `user.rb` file from the `examples` folder in the repository.
+
+###So we have a model, now what?###
+
+Let's craft a simple login page. First delete the `index.html` file from your `public/` directory.
+
+You may remember that we need to specify routes in our application (just like in flask or django). Add the following to your `routes.rb`:
+```
+RampupApp::Application.routes.draw do  
+  get "log_out" => "sessions#destroy", :as => "log_out"
+  get "log_in" => "sessions#new", :as => "log_in"
+  get "sign_up" => "users#new", :as => "sign_up"
+  root :to => "users#new"
+  resources :users
+  resources :sessions
+end
+```
+I'll ask you to trust me on the resources and the get routes...for now we will concern ourselves with stepping through the application.
+
+Save the file, and (double-check to make sure `public/index.html` is gone!) start the rails server
+```
+rails s
+```
+Alternatively, you can add the `-d` flag to start it in detached mode, which means it will run in the background
+```
+rails s -d
+```
+of course this means you'll have to hunt down the process later and kill it, and you won't see log information, so pick whichever one you feel fits your style more.
+
+If you open `localhost:3000` in your web browser, you should see an error message along the lines of 
+```
+Routing Error
+
+uninitialized constant UsersController
+Try running rake routes for more information on available routes.
+```
+This is excellent! This tells us exactly what to do.
+
+###Users Controller###
+We are going to create `users_controller.rb` next. If you guessed that it will live in `app/controllers/users_controller.rb` then you are correct! In keeping with the general theme of this lab, let's start from scratch :)
+
+```
+class UsersController << ApplicationController
+
+end
+```
+
+Refresh the page in your browser, and behold! Rails will tell you exactly what to do next!
+
+```
+Unknown action
+
+The action 'new' could not be found for UsersController
+```
+
+So let's make a new action:
+```
+def new
+  @user = User.new
+end
+```
+I bet you can guess that I'll suggest refreshing the page again...you are correct! This is a great technique for developing because it prevents you from getting sucked down a rabbit hole where you build out a feature completely before discovering a fundamental assumption was incorrect, or a fundamental step was missed.
+
+Now you should see
+```
+Template is missing
+
+Missing template users/new, application/new with {:locale=>[:en], :formats=>[:html], :handlers=>[:erb, :builder, :coffee]}. Searched in: * "/Users/ddieker/projects/dev-sprint9/rampup_app/app/views"
+```
+
+So, you guessed it, we are going to create a template. Create `views/users/new.html.erb`.
+
+If you refresh now, you will see no error messages--Rails is happy (and you should be too!)!. Happy, but not satisfied; after all, this is meant to create a new user. To create a new user, we are going to need a series of parameters we can use to create that user, and the best way to gather these is probably through a form.
+
+In your `new.html.erb` file, enter the following:
+```
+<h2>Register as a new user</h2>
+<%= form_for @user do |f|%>
+  <p>
+    <%= f.label :name %><br />
+    <%= f.text_field :name %>
+  </p>
+  <p>
+    <%= f.label :email %><br />
+    <%= f.email_field :email %>
+  </p>
+  <p>
+    <%= f.label :password %><br />
+    <%= f.password_field :password %>
+  </p>
+  <p>
+    <%= f.label :password_confirmation %><br />
+    <%= f.password_field :password_confirmation %>
+  </p>
+  <p class="button"><%= f.submit %></p>
+<% end %> 
+```
+`form_for` is a Rails helper method that takes an object (and a number of other optional arguments) and uses that object as the key for a hash. Essentially, you can think of `form_for` as adding `params[:user]` (remember the `@user` is passed in by the controller, and represents `User.new`). Each `form_field` we create for user adds that key to the user hash. The above code will create:
+```
+params[:user][:name]
+params[:user][:email]
+params[:user][:password]
+params[:user][:password_confirmation]
+```
+
+Go ahead and refresh the page, and you should see a form that has the fields that we coded for. If you fill out the form and hit the submit button, you will see a new error message (this is great! It means progress!!)
+
+```
+Unknown action
+
+The action 'create' could not be found for UsersController
+```
+
+So we've learned that by default, the Ruby form_helper's submit button will send us to the `#create` method in the `users_controller`. Ruby has told us that method doesn't exist, so let's go create it!
+
+In UsersController, we will want to assign the various parts of `params[:user]`. Remember that we should avoid mass assignment to protect against exploits, and that we will need to call `@user.save` once we finish assigning all the attributes.
+
+Of course, it's always good to handle the case where your model object might be invalid, so let's be conservative and wrap the save statement in an if/else block.
+```
+def create
+  @user = User.new
+  #the methods to assign values go here
+  if @user.save
+    redirect_to root_url, :notice => "Signed up!"
+  else
+    flash.now.alert = "Invalid email or password"
+    render "new"
+  end
+end
+```
+The flash method may look familiar to you--it, and `:notice` are both very similar to the flashed_messages method that flask provides; essentially these messages will be presented to the user. If the `@user` object saves properly, we will be redirected to the `root_url` as specified in the `routes.rb` file. If, however, the save fails (meaning the `@user` object is invalid), we want to redirect to the sign up form.
+
+Of course, you may notice that after a save we don't see the flashed message, nor do we see anything different after we create an account. To do that we're going to have to add something to our `new.html.erb` and our `application.html.erb` layout:
+```
+#in app/views/users/new.html.erb
+<%= form_for @user do |f|
+  <% if @user.errors.any? %>
+    <div class="error_messages">
+      <strong>Form is invalid</strong>
+      <ul>
+        <% for message in @user.errors.full_messages %>
+          <li><%= message %></li>
+        <% end %>
+      </ul>
+    </div>
+  <% end %>
+  ...
+<% end %>
+```
+
+A layout in Rails is a template within which all other templates are rendered. It is possible to have multiple layouts (for instance, one for admins and one for users, or maybe different layouts for different areas of the application). Basically wherever the `<%= yield %>` statement sits is where the views will be rendered inside the layout.
+
+```
+#in app/views/layouts/application.html.erb above the `yield`
+<% flash.each do |name, msg| %>
+  <%= content_tag :div, msg, :id => "flash_#{name}" %>
+<% end %>
+```
+
+###Sessions###
+We have a way for users to sign up, but not a way for them to sign in! Enter sessions. A session helps us identify the current user. Much as any other site you log in to is able to remember who you are even as you navigate links within the site, or leave and then come back, we want our application to create a session when a user authenticates (logs in).
+
+The best way to manage a session, is with a session controller.
+
+Go ahead and create the sessions_controller.rb file in app/controllers/.
+
+Our sessions controller is going to look like this:
+```
+class SessionsController < ApplicationController
+  def new
+  end
+
+  def create
+    user = User.authenticate(params[:email], params[:password])
+    if user
+      session[:user_id] = user.id
+      redirect_to root_url, :notice => "Logged in!"
+    else
+      flash.now.alert = "Invalid email or password"
+      render "new"
+    end
+  end
+
+  def destroy
+    session[:user_id] = nil
+    redirect_to root_url, :notice => "Logged out!"
+  end
+end
+```
+You may remember from our routes file that we mapped Rails' 'sign_in' path to the 'sessions#new' action; essentially saying that anytime we link to the 'sign_in_path' in Rails, we want to point to the 'new' method in sessions_controller.rb.
+
+You may also remember, from our work in the UsersController, that any forms in a view for the `new` action of a controller will submit to the `create` action of that same controller (of course, you can override this, but we have no need to).
+
+So if we look at `sessions#create`, we can see that it takes an :email and :password parameter, and uses the `User.authenticate` method that we created in our model to determine if a valid user is attempting to log in. If the user authenticates, we set the session variable :user_id to be the user's id, and send them to the root url with the notice that they have authenticated successfully.
+
+If, however, the email and password combination fail the authentication method, we flash an alert that the email and password were invalid and redirect to the registration form.
+
+Finally if a user logs out, we will want to destroy the session, and `#destroy` does just that, setting the session variable for :user_id to `nil` and redirecting to the root url with a "Logged out!" notice.
+
+But wait! We have no way of accessing these methods, no login form!
+
+If we want to match the login form to the SessionsController's `new` method, it stands to reason that we will need a template in /app/views/sessions...and furthermore, you've probably already guessed that we'll call it `new.html.erb` :)
+
+I'm going to include the code below because we're going to do something special with this form.
+
+Rails form helpers typically rely upon an object to help them determine what to call the parameters they send back to the controller. In this case we simply specify the sessions_path, which is generated by our `resources :sessions` line in the `routes.rb` file, and tells the form that the submit_tag will point to `localhost:3000/root_url/sessions/create`.
+
+Everything else, though, you'll see is very similar. There is a `password_field_tag` and a `text_field_tag`, which are in principal the same as the `f.text_field` and `f.password_field`. The only difference (which you may have noticed already) is that in the `app/users/new.html.erb` form when we go through the form_tag block we assign the empty object, `@user`, to the variable |f|, so all the input fields we add within the form have that object as context. In this case, there is no object to pass through because we are just targeting a url, so we will use the tag methods instead.
+
+```
+<h1>Log in</h1>
+
+<%= form_tag sessions_path do %>
+  <p>
+    <%= label_tag :email %><br />
+    <%= text_field_tag :email, params[:email] %>
+  </p>
+  <p>
+    <%= label_tag :password %><br />
+    <%= password_field_tag :password %>
+  </p>
+  <p class="button"><%= submit_tag "Log in" %></p>
+<% end %>
+```
+
+Okay, let's assume that this works for now. If we go back to the root url, we don't really have a way of logging in, we only see the new user creation form. The way we're going to tackle this is not by editing each view, which will be tedious, but instead by editing the layout, so that on any page we visit, we are either presented with `log in` and `sign up` links, or with a `log out` link.
+
+Another method to writing code is to 'write the code that we want to have' rather than writing the code that works right now. This helps us do some design in our heads when another person might not be around to bounce our ideas off of. For instance, we might imagine a section of the application.html.erb layout to look like this:
+```
+<div id="user_nav">
+  <% if current_user %>
+    Logged in as <%= current_user.email %>.
+    <%= link_to "Log out", log_out_path %>
+  <% else %>
+    <%= link_to "Sign up", sign_up_path %> or
+    <%= link_to "log in", log_in_path %>
+  <% end %>
+</div>
+```
+This logic either presents the user with a 'log out' link if they exist as a `current_user`, or presents them with links to `sign up` or `log in` if there is no `current_user`.
+
+I bet you can probably imagine what `current_user` accesses...
+
+Yup, we're going to use the session we've created! We're going to create a helper method of our own that we can use throughout our application. The way we'll do that is by placing this method in the ApplicationController, the class that all of our other controllers inherit from.
+
+```
+helper_method :current_user
+
+private
+
+def current_user
+  @current_user ||= User.find(session[:user_id]) if session[:user_id]
+end
+```
+
+We privatize this method for security, so that no outside controller or method can call it. Private methods can only be called from within the class in which they reside, or by explicitly using the :send method and passing the method name in as an argument.
+
+If we step through what current_user actually does, it checks to see what the result of `User.find(session[:user_id])` is if `session[:user_id]` is present. The way that we defined sessions in the `SessionsController`, `session[:user_id]` is only set upon the completion of a successful login.
+
+Refresh your application, and go through the steps of logging in and logging out. Verify that the application works properly. If you encounter issues, please ask on Piazza so that others can leverage the answers to your questions.
+
+Finally, if you get to the point where you feel you are stuck, take a peek through the rampup_app folder in the repository, or reach out directly to myself or another TA (on facebook, email, or piazza).
+
+#Feedback#
+Please send any feedback to ddieker (at) gmail (dot) com. I would love to hear:
+1) how far you got
+2) how appropriate / inappropriate you felt the complexity and amount of assignments was (you might have different answers for each!)
+3) what you wished I had explained in the lab (but you had to go out and find out on your own)
+4) any remaining questions you have after completing the lab---I will try and address these either in the next lab or the next time I or one of the other TMs sees you.
+
+Thanks!
